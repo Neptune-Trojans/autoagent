@@ -67,13 +67,13 @@ You have a tool called `run_shell` that executes commands in a Linux environment
 
 ## Critical rules
 
-- **Always write computed values, NOT Excel formulas.** The evaluator reads cell values with data_only=True. Formulas like =VLOOKUP(...) will appear as None or #VALUE!. Compute the result in Python and write the final number/string to the cell.
-- **Never write VBA or macro code into cells.** If a task describes a VBA/macro operation, implement the equivalent logic in Python and write the computed results.
-- **Preserve existing data**: Copy the input workbook first, then modify only the cells in the answer_position range.
+- **NEVER write Excel formulas to cells. ALWAYS write computed Python values.** Even when the task discusses formulas (e.g., "use VLOOKUP", "apply INDEX/MATCH", "create a formula"), you must implement the formula's logic in Python and write the computed result (a number, string, or date) to the cell. The evaluator compares raw cell values. A formula string like "=VLOOKUP(...)" will NOT be evaluated and will fail.
+- **Never write VBA or macro code into cells.** If a task describes a VBA/macro operation, implement the equivalent logic in Python and write the computed results to cells.
+- **Preserve existing data**: Use `shutil.copy2(input_path, output_path)` first, then open the copy and modify only the cells in the answer_position range.
 - **Use openpyxl for writing** (preserves formatting). Use pandas only for data analysis/computation, then write results back with openpyxl.
 - **Ensure output directory exists**: `os.makedirs('/app/output', exist_ok=True)`
-- **Match exact formats**: If existing cells use abbreviations (e.g., "Mon" not "Monday"), match that pattern. If percentages are stored as decimals (0.32 = 32%), write decimals.
-- **Retry on errors**: If your code errors, read the traceback, diagnose, fix, and re-run.
+- **Match exact formats**: Check the existing data patterns. If cells use abbreviations (e.g., "Mon" not "Monday"), match them. If percentages are stored as decimals (0.32 = 32%), write decimals. Check number formatting of nearby cells.
+- **Retry on errors**: If your code errors, read the traceback, diagnose, fix, and re-run. Try at least 2-3 times before giving up.
 - **Handle edge cases**: Check for None/empty cells, merged cells, and multiple sheets.
 """
 MODEL = "gpt-5"
@@ -97,7 +97,46 @@ def create_tools(environment: BaseEnvironment) -> list[FunctionTool]:
         except Exception as exc:
             return f"ERROR: {exc}"
 
-    return [run_shell]
+    @function_tool
+    async def inspect_spreadsheet(file_path: str, sheet_name: str = "", cell_range: str = "", max_rows: int = 20) -> str:
+        """Inspect a spreadsheet file. Returns sheet names, dimensions, and cell values.
+
+        Args:
+            file_path: Path to the .xlsx file
+            sheet_name: Optional sheet name to inspect (default: first sheet)
+            cell_range: Optional cell range like "A1:E10" to read specific cells
+            max_rows: Maximum rows to display (default 20)
+        """
+        script = f'''
+import openpyxl, json
+wb = openpyxl.load_workbook("{file_path}", data_only=True)
+sheets = wb.sheetnames
+print(f"Sheets: {{sheets}}")
+name = "{sheet_name}" if "{sheet_name}" else sheets[0]
+ws = wb[name]
+print(f"Active: {{name}}, Rows: {{ws.max_row}}, Cols: {{ws.max_column}}")
+cell_range = "{cell_range}"
+if cell_range:
+    for row in ws[cell_range]:
+        if not isinstance(row, tuple): row = (row,)
+        print([(c.coordinate, c.value) for c in row])
+else:
+    for i, row in enumerate(ws.iter_rows(values_only=False)):
+        if i >= {max_rows}:
+            print(f"... ({{ws.max_row - {max_rows}}} more rows)")
+            break
+        print([(c.coordinate, c.value) for c in row])
+'''
+        try:
+            result = await environment.exec(command=f"python3 -c '{script}'", timeout_sec=30)
+            out = result.stdout or ""
+            if result.stderr:
+                out += f"\nSTDERR: {result.stderr}" if out else f"STDERR: {result.stderr}"
+            return out or "(no output)"
+        except Exception as exc:
+            return f"ERROR: {exc}"
+
+    return [run_shell, inspect_spreadsheet]
 
 
 def create_agent(environment: BaseEnvironment) -> Agent:
