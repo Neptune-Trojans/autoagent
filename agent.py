@@ -38,7 +38,7 @@ You have a tool called `run_shell` that executes commands in a Linux environment
    - The answer_position (cells you must fill/modify)
    - Whether it's Cell-Level or Sheet-Level Manipulation
 
-2. **Inspect the input**: Use run_shell to examine the spreadsheet:
+2. **Inspect the input thoroughly**: Before coding, examine ALL relevant data in the spreadsheet. Do not just look at the first 5 rows — look at enough rows to understand the data patterns, edge cases, and all the data your solution must handle.
    ```
    python3 -c "
    import openpyxl
@@ -46,14 +46,25 @@ You have a tool called `run_shell` that executes commands in a Linux environment
    for name in wb.sheetnames:
        ws = wb[name]
        print(f'Sheet: {name}, Rows: {ws.max_row}, Cols: {ws.max_column}')
-       for row in ws.iter_rows(min_row=1, max_row=min(5, ws.max_row), values_only=False):
+       for row in ws.iter_rows(min_row=1, max_row=min(20, ws.max_row), values_only=False):
            print([(c.coordinate, c.value) for c in row])
    "
    ```
+   Pay attention to None/empty cells — they are meaningful. For range lookups, None may mean "unbounded" (open-ended range).
 
 3. **Write and execute a Python script**: Write the full solution to a .py file and run it. Always use `run_shell` — never just output code as text.
 
-4. **Verify the output**: After writing the output file, call the `verify_output` tool with the full original task instruction. It will independently re-read your output and check correctness. If it reports FAIL, fix the issues and verify again.
+4. **Verify the output**: After execution, read back the output file and check the answer_position cells contain expected values:
+   ```
+   python3 -c "
+   import openpyxl
+   wb = openpyxl.load_workbook('OUTPUT_PATH', data_only=True)
+   ws = wb['SHEET_NAME']
+   for row in ws.iter_rows(min_row=R1, max_row=R2, min_col=C1, max_col=C2, values_only=False):
+       print([(c.coordinate, c.value, type(c.value).__name__) for c in row])
+   "
+   ```
+   If values look wrong, fix and re-run.
 
 ## Critical rules
 
@@ -65,6 +76,8 @@ You have a tool called `run_shell` that executes commands in a Linux environment
 - **Match exact formats**: Check the existing data patterns. If cells use abbreviations (e.g., "Mon" not "Monday"), match them. If percentages are stored as decimals (0.32 = 32%), write decimals. Check number formatting of nearby cells.
 - **Retry on errors**: If your code errors, read the traceback, diagnose, fix, and re-run. Try at least 2-3 times before giving up.
 - **Handle edge cases**: Check for None/empty cells, merged cells, and multiple sheets.
+- **Read ALL relevant data before coding**: If the task involves lookups across sheets, inspect both sheets completely. Understand the data types, None values, and patterns. None cells in range columns (start/end) may mean the range is open-ended.
+- **Check assumptions against the data**: After writing your solution, verify a few specific cells manually. If the output looks wrong for even one cell, re-examine your logic.
 """
 MODEL = "gpt-5"
 MAX_TURNS = 50
@@ -129,50 +142,13 @@ else:
     return [run_shell, inspect_spreadsheet]
 
 
-VERIFIER_PROMPT = """\
-You are a verification agent for spreadsheet manipulation tasks. Your job is to
-check whether the output spreadsheet was produced correctly.
-
-You will be given the original task instruction. Use the tools to:
-
-1. Read the output file at the output_path specified in the instruction.
-2. Check the answer_position cells — do they contain reasonable values?
-3. Compare against the input file to make sure existing data was preserved.
-4. Check for common errors:
-   - Empty/None cells where values are expected
-   - Formula strings (starting with "=") instead of computed values
-   - Wrong data types (string instead of number, or vice versa)
-   - Values that don't match the format of surrounding data
-
-Report PASS if everything looks correct, or FAIL with specific cell references
-and what's wrong so the main agent can fix the issues.
-"""
-
-
 def create_agent(environment: BaseEnvironment) -> Agent:
     """Build the agent. Modify to add handoffs, sub-agents, or agent-as-tool."""
     tools = create_tools(environment)
-
-    verifier = Agent(
-        name="verifier",
-        instructions=VERIFIER_PROMPT,
-        tools=tools,
-        model=MODEL,
-    )
-
     return Agent(
         name="autoagent",
         instructions=SYSTEM_PROMPT,
-        tools=tools + [verifier.as_tool(
-            tool_name="verify_output",
-            tool_description=(
-                "Call this AFTER you have written the output file. "
-                "Pass the full original task instruction as input. "
-                "The verifier will re-read your output file and check "
-                "whether the answer_position cells are correct. "
-                "If it reports FAIL, fix the issues and call it again."
-            ),
-        )],
+        tools=tools,
         model=MODEL,
     )
 
