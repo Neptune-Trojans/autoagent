@@ -53,17 +53,7 @@ You have a tool called `run_shell` that executes commands in a Linux environment
 
 3. **Write and execute a Python script**: Write the full solution to a .py file and run it. Always use `run_shell` — never just output code as text.
 
-4. **Verify the output**: After execution, read back the output file and check the answer_position cells contain expected values:
-   ```
-   python3 -c "
-   import openpyxl
-   wb = openpyxl.load_workbook('OUTPUT_PATH', data_only=True)
-   ws = wb['SHEET_NAME']
-   for row in ws.iter_rows(min_row=R1, max_row=R2, min_col=C1, max_col=C2, values_only=False):
-       print([(c.coordinate, c.value, type(c.value).__name__) for c in row])
-   "
-   ```
-   If values look wrong, fix and re-run.
+4. **Verify the output**: After writing the output file, call the `verify_output` tool with the full original task instruction. It will independently re-read your output and check correctness. If it reports FAIL, fix the issues and verify again.
 
 ## Critical rules
 
@@ -139,13 +129,50 @@ else:
     return [run_shell, inspect_spreadsheet]
 
 
+VERIFIER_PROMPT = """\
+You are a verification agent for spreadsheet manipulation tasks. Your job is to
+check whether the output spreadsheet was produced correctly.
+
+You will be given the original task instruction. Use the tools to:
+
+1. Read the output file at the output_path specified in the instruction.
+2. Check the answer_position cells — do they contain reasonable values?
+3. Compare against the input file to make sure existing data was preserved.
+4. Check for common errors:
+   - Empty/None cells where values are expected
+   - Formula strings (starting with "=") instead of computed values
+   - Wrong data types (string instead of number, or vice versa)
+   - Values that don't match the format of surrounding data
+
+Report PASS if everything looks correct, or FAIL with specific cell references
+and what's wrong so the main agent can fix the issues.
+"""
+
+
 def create_agent(environment: BaseEnvironment) -> Agent:
     """Build the agent. Modify to add handoffs, sub-agents, or agent-as-tool."""
     tools = create_tools(environment)
+
+    verifier = Agent(
+        name="verifier",
+        instructions=VERIFIER_PROMPT,
+        tools=tools,
+        model=MODEL,
+    )
+
     return Agent(
         name="autoagent",
         instructions=SYSTEM_PROMPT,
-        tools=tools,
+        tools=tools + [verifier.as_tool(
+            tool_name="verify_output",
+            tool_description=(
+                "Call this AFTER you have written the output file. "
+                "Pass the full original task instruction as input. "
+                "The verifier will re-read your output file and check "
+                "whether the answer_position cells are correct. "
+                "If it reports FAIL, fix the issues and call it again."
+            ),
+        )],
         model=MODEL,
     )
 
