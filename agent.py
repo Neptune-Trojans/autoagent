@@ -38,7 +38,7 @@ You have a tool called `run_shell` that executes commands in a Linux environment
    - The answer_position (cells you must fill/modify)
    - Whether it's Cell-Level or Sheet-Level Manipulation
 
-2. **Inspect the input thoroughly**: Before coding, examine ALL relevant data in the spreadsheet. Do not just look at the first 5 rows — look at enough rows to understand the data patterns, edge cases, and all the data your solution must handle.
+2. **Inspect the input**: Use run_shell to examine the spreadsheet:
    ```
    python3 -c "
    import openpyxl
@@ -46,11 +46,10 @@ You have a tool called `run_shell` that executes commands in a Linux environment
    for name in wb.sheetnames:
        ws = wb[name]
        print(f'Sheet: {name}, Rows: {ws.max_row}, Cols: {ws.max_column}')
-       for row in ws.iter_rows(min_row=1, max_row=min(20, ws.max_row), values_only=False):
+       for row in ws.iter_rows(min_row=1, max_row=min(5, ws.max_row), values_only=False):
            print([(c.coordinate, c.value) for c in row])
    "
    ```
-   Pay attention to None/empty cells — they are meaningful. For range lookups, None may mean "unbounded" (open-ended range).
 
 3. **Write and execute a Python script**: Write the full solution to a .py file and run it. Always use `run_shell` — never just output code as text.
 
@@ -76,8 +75,9 @@ You have a tool called `run_shell` that executes commands in a Linux environment
 - **Match exact formats**: Check the existing data patterns. If cells use abbreviations (e.g., "Mon" not "Monday"), match them. If percentages are stored as decimals (0.32 = 32%), write decimals. Check number formatting of nearby cells.
 - **Retry on errors**: If your code errors, read the traceback, diagnose, fix, and re-run. Try at least 2-3 times before giving up.
 - **Handle edge cases**: Check for None/empty cells, merged cells, and multiple sheets.
-- **Read ALL relevant data before coding**: If the task involves lookups across sheets, inspect both sheets completely. Understand the data types, None values, and patterns. None cells in range columns (start/end) may mean the range is open-ended.
-- **Check assumptions against the data**: After writing your solution, verify a few specific cells manually. If the output looks wrong for even one cell, re-examine your logic.
+- **Use case-insensitive string matching** for lookups and comparisons (e.g., `str.lower()` or `str.casefold()`). Spreadsheet data often has inconsistent capitalization.
+- **Never hardcode values**: Always read column headers, category names, and labels from the actual spreadsheet data. Do not guess or assume text content.
+- **Mandatory output check**: After writing the output, you MUST read back the answer_position cells and print them. If any cell is None/empty when a value is expected, or if numeric values look unreasonable, debug your logic and retry. Do not finish until the output looks correct.
 """
 MODEL = "gpt-5"
 MAX_TURNS = 50
