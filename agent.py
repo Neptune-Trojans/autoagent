@@ -38,18 +38,7 @@ You have a tool called `run_shell` that executes commands in a Linux environment
    - The answer_position (cells you must fill/modify)
    - Whether it's Cell-Level or Sheet-Level Manipulation
 
-2. **Inspect the input**: Use run_shell to examine the spreadsheet:
-   ```
-   python3 -c "
-   import openpyxl
-   wb = openpyxl.load_workbook('INPUT_PATH', data_only=True)
-   for name in wb.sheetnames:
-       ws = wb[name]
-       print(f'Sheet: {name}, Rows: {ws.max_row}, Cols: {ws.max_column}')
-       for row in ws.iter_rows(min_row=1, max_row=min(5, ws.max_row), values_only=False):
-           print([(c.coordinate, c.value) for c in row])
-   "
-   ```
+2. **Inspect the input**: Use `inspect_spreadsheet` or run_shell to examine ALL relevant data. Do not just look at the first few rows — you need to see enough data to understand patterns, edge cases, and the full scope of what your solution must handle. For small sheets (under 50 rows), read all rows. For larger sheets, read at least 30 rows plus any specific ranges referenced in the task.
 
 3. **Write and execute a Python script**: Write the full solution to a .py file and run it. Always use `run_shell` — never just output code as text.
 
@@ -110,32 +99,28 @@ def create_tools(environment: BaseEnvironment) -> list[FunctionTool]:
             cell_range: Optional cell range like "A1:E10" to read specific cells
             max_rows: Maximum rows to display (default 20)
         """
-        import shlex
-        script = f'''import openpyxl, sys
-wb = openpyxl.load_workbook(sys.argv[1], data_only=True)
+        script = f'''
+import openpyxl, json
+wb = openpyxl.load_workbook("{file_path}", data_only=True)
 sheets = wb.sheetnames
 print(f"Sheets: {{sheets}}")
-name = sys.argv[2] if sys.argv[2] else sheets[0]
+name = "{sheet_name}" if "{sheet_name}" else sheets[0]
 ws = wb[name]
 print(f"Active: {{name}}, Rows: {{ws.max_row}}, Cols: {{ws.max_column}}")
-cr = sys.argv[3]
-mr = int(sys.argv[4])
-if cr:
-    for row in ws[cr]:
+cell_range = "{cell_range}"
+if cell_range:
+    for row in ws[cell_range]:
         if not isinstance(row, tuple): row = (row,)
         print([(c.coordinate, c.value) for c in row])
 else:
     for i, row in enumerate(ws.iter_rows(values_only=False)):
-        if i >= mr:
-            print(f"... ({{ws.max_row - mr}} more rows)")
+        if i >= {max_rows}:
+            print(f"... ({{ws.max_row - {max_rows}}} more rows)")
             break
         print([(c.coordinate, c.value) for c in row])
 '''
         try:
-            # Write script to file to avoid shell quoting issues
-            await environment.exec(command="cat > /tmp/_inspect.py << 'HEREDOC'\n" + script + "\nHEREDOC", timeout_sec=5)
-            cmd = f"python3 /tmp/_inspect.py {shlex.quote(file_path)} {shlex.quote(sheet_name)} {shlex.quote(cell_range)} {max_rows}"
-            result = await environment.exec(command=cmd, timeout_sec=30)
+            result = await environment.exec(command=f"python3 -c '{script}'", timeout_sec=30)
             out = result.stdout or ""
             if result.stderr:
                 out += f"\nSTDERR: {result.stderr}" if out else f"STDERR: {result.stderr}"
